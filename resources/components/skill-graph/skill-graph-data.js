@@ -5,11 +5,23 @@ import { skillIcons } from "../../game/skill";
 
 export const lineChartYAxisOptions = ["Cumulative experience gained", "Total experience", "Experience per hour"];
 
+// Mirrors the backend's current SKILLS_DAY_BUCKET_MINUTES default
+// (config/skills.php on the server) — display-only, not fetched live. If
+// that default ever changes, update this to match, or Realtime bins will
+// just end up finer/coarser than the actual stored data resolution
+// (harmless either way, not a correctness bug).
+const REALTIME_BIN_MINUTES = 15;
+
 export function enumerateDateBinsForPeriod(period) {
   const now = new Date(Date.now());
   const dates = [];
 
   switch (period) {
+    case "Realtime": {
+      const start = DateFNS.startOfHour(DateFNS.sub(now, { days: 1 }), { in: utc });
+      dates.push(...DateFNS.eachMinuteOfInterval({ start, end: now }, { step: REALTIME_BIN_MINUTES }));
+      break;
+    }
     case "Day": {
       const start = DateFNS.startOfHour(DateFNS.sub(now, { days: 1 }), { in: utc });
       dates.push(...DateFNS.eachHourOfInterval({ start, end: now }));
@@ -39,6 +51,7 @@ export function enumerateDateBinsForPeriod(period) {
 
 export function buildLineChartOptions({ period, yAxisUnit }) {
   const minimumTimeUnitPerPeriod = {
+    Realtime: "minute",
     Day: "hour",
     Week: "day",
     Month: "day",

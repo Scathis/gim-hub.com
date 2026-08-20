@@ -32,6 +32,13 @@
   ChartJS.register(CategoryScale, TimeScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
   const skillFilteringOptions = ["Overall", ...skills];
+  const periodDescriptions = {
+    Realtime: "24 hours (live)",
+    Day: "day",
+    Week: "week",
+    Month: "month",
+    Year: "year",
+  };
 
   const apiStore = useApiStore();
   const groupStore = useGroupStore();
@@ -107,14 +114,14 @@
 
     switch (yAxisUnit.value) {
       case "Cumulative experience gained":
-        data.title = `Experience gained over the preceding ${period.value.toLowerCase()}`;
+        data.title = `Experience gained over the preceding ${periodDescriptions[period.value]}`;
         data.numberPrefix = "+";
         break;
       case "Total experience":
         data.title = "Current total experience";
         break;
       case "Experience per hour":
-        data.title = `Experience per hour averaged over the preceding ${period.value.toLowerCase()}`;
+        data.title = `Experience per hour averaged over the preceding ${periodDescriptions[period.value]}`;
         data.numberPrefix = "+";
         break;
     }

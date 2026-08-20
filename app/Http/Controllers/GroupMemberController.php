@@ -431,7 +431,7 @@ class GroupMemberController extends Controller
     public function getSkillData(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'period' => 'required|in:Day,Week,Month,Year',
+            'period' => 'required|in:Day,Week,Month,Year,Realtime',
         ]);
 
         $groupId = $request->attributes->get('group')->id;
@@ -442,6 +442,7 @@ class GroupMemberController extends Controller
             'Week' => AggregatePeriod::Month,
             'Month' => AggregatePeriod::Month,
             'Year' => AggregatePeriod::Year,
+            'Realtime' => AggregatePeriod::Day,
             default => AggregatePeriod::Day,
         };
 

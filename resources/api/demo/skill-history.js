@@ -8,6 +8,26 @@ export function populateSkillDataFromRoster(state) {
     const now = new Date(Date.now());
     let dates = [];
     switch (period) {
+      case "Realtime": {
+        const start = DateFNS.startOfHour(
+          DateFNS.sub(now, {
+            days: 1,
+          }),
+          {
+            in: utc,
+          },
+        );
+        dates.push(
+          ...DateFNS.eachMinuteOfInterval(
+            {
+              start,
+              end: now,
+            },
+            { step: 15 },
+          ),
+        );
+        break;
+      }
       case "Day": {
         const start = DateFNS.startOfHour(
           DateFNS.sub(now, {

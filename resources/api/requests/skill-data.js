@@ -1,7 +1,7 @@
 import * as z from "zod/v4";
 import { dateSchema } from "./shared";
 
-export const aggregatePeriods = ["Day", "Week", "Month", "Year"];
+export const aggregatePeriods = ["Realtime", "Day", "Week", "Month", "Year"];
 
 export async function fetchSkillData({ baseURL, credentials, period }) {
   const response = await fetch(`${baseURL}/group/${credentials.name}/get-skill-data?period=${period}`, {
