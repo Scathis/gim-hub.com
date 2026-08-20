@@ -32,6 +32,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase image owner
+        run: echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -40,7 +43,7 @@ jobs:
             GIM_HUB_RELEASE=${{ github.sha }}
           platforms: linux/amd64
           target: production
-          tags: ghcr.io/${{ github.repository_owner }}/gim-hub.com:octane
+          tags: ghcr.io/${{ env.OWNER_LC }}/gim-hub.com:octane
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
