@@ -58,6 +58,17 @@ export function buildLineChartOptions({ period, yAxisUnit }) {
     Year: "month",
   };
 
+  // Chart.js's auto tick placement doesn't reliably land on clean
+  // clock-aligned boundaries for a 24h span at 15-minute data resolution
+  // (it can pick an irregular auto-computed step, e.g. "2:03, 2:24"
+  // instead of "2:00, 2:30"). Force an explicit unit/step for Realtime so
+  // the axis label grid is always half-hour-aligned — this only affects
+  // the tick labels, not the plotted points' actual data resolution.
+  const explicitTickStepPerPeriod = {
+    Realtime: { unit: "minute", stepSize: 30 },
+  };
+  const explicitTickStep = explicitTickStepPerPeriod[period];
+
   return {
     maintainAspectRatio: false,
     animation: false,
@@ -79,7 +90,11 @@ export function buildLineChartOptions({ period, yAxisUnit }) {
       x: {
         title: { display: false, text: "Time" },
         type: "time",
-        time: { minUnit: minimumTimeUnitPerPeriod[period] },
+        time: {
+          minUnit: minimumTimeUnitPerPeriod[period],
+          ...(explicitTickStep && { unit: explicitTickStep.unit }),
+        },
+        ...(explicitTickStep && { ticks: { stepSize: explicitTickStep.stepSize } }),
       },
       y: {
         title: { display: true, text: yAxisUnit },
