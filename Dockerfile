@@ -9,6 +9,12 @@ RUN install-php-extensions \
     zip \
     opcache
 
+# No php.ini is loaded by default in this base image ("Loaded Configuration
+# File => (none)" per `php -i`), so expose_php defaults On and every response
+# leaks the exact PHP version via X-Powered-By. Off by policy, not needed
+# functionally.
+RUN echo "expose_php=Off" > /usr/local/etc/php/conf.d/99-expose-php-off.ini
+
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
