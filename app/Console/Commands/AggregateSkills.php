@@ -7,6 +7,7 @@ use App\Models\AggregationInfo;
 use App\Models\MemberProperty;
 use App\Models\SkillStat;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -76,9 +77,16 @@ class AggregateSkills extends Command
         $date = is_string($date) ? Carbon::parse($date) : $date;
 
         return match ($period) {
-            AggregatePeriod::Day => $date->copy()->minute(0)->second(0)->format('Y-m-d H:00:00'),
+            AggregatePeriod::Day => $this->floorToBucket($date, (int) config('skills.day_bucket_minutes'))->format('Y-m-d H:i:00'),
             AggregatePeriod::Month => $date->copy()->startOfDay()->format('Y-m-d 00:00:00'),
             AggregatePeriod::Year => $date->copy()->startOfMonth()->startOfDay()->format('Y-m-01 00:00:00'),
         };
+    }
+
+    protected function floorToBucket(CarbonInterface $date, int $bucketMinutes): CarbonInterface
+    {
+        $flooredMinute = intdiv($date->minute, $bucketMinutes) * $bucketMinutes;
+
+        return $date->copy()->minute($flooredMinute)->second(0);
     }
 }
