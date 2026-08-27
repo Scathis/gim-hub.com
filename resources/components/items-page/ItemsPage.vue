@@ -4,7 +4,13 @@
   import { useGameDataStore } from "../../stores/game-data";
   import { useGroupStore } from "../../stores/group";
   import { useSettingsStore } from "../../stores/settings";
-  import { composeItemIconHref, mappedAlchable, mappedGEPrice, mappedHighAlch } from "../../game/items";
+  import {
+    composeItemIconHref,
+    getCanonicalItemMap,
+    mappedAlchable,
+    mappedGEPrice,
+    mappedHighAlch,
+  } from "../../game/items";
   import { useLocalStorage } from "../../composables/local-storage";
   import { useRememberedState } from "../../composables/remembered-state";
   import CachedImage from "../cached-image/CachedImage.vue";
@@ -122,10 +128,13 @@
     const itemData = gameDataStore.gameData.items;
     const grandExchangeData = gameDataStore.gameData.gePrices;
     const itemTags = gameDataStore.gameData.itemTags;
+    const canonicalItemMap = getCanonicalItemMap(itemData);
+    const rowsByCanonicalID = new Map();
 
     for (const [itemID, breakdownByMember] of groupStore.items) {
-      const itemDatum = itemData?.get(itemID);
-      if (!itemDatum || !itemMatchesSearch(itemID, itemDatum, itemTags)) {
+      const canonicalID = canonicalItemMap.get(itemID) ?? itemID;
+      const canonicalDatum = itemData?.get(canonicalID);
+      if (!canonicalDatum || !itemMatchesSearch(canonicalID, canonicalDatum, itemTags)) {
         continue;
       }
 
@@ -139,15 +148,38 @@
       const grandExchangePrice = mappedGEPrice(itemID, grandExchangeData, itemData);
       aggregates.totalHighAlch += totalQuantity * highAlch;
       aggregates.totalGEPrice += totalQuantity * grandExchangePrice;
+
+      let row = rowsByCanonicalID.get(canonicalID);
+      if (!row) {
+        row = {
+          itemID: canonicalID,
+          itemName: canonicalDatum.name,
+          breakdownByMember: new Map(),
+          totalQuantity: 0,
+          totalHighAlchValue: 0,
+          totalGEValue: 0,
+          alchable: false,
+        };
+        rowsByCanonicalID.set(canonicalID, row);
+      }
+
+      row.totalQuantity += totalQuantity;
+      row.totalHighAlchValue += totalQuantity * highAlch;
+      row.totalGEValue += totalQuantity * grandExchangePrice;
+      row.alchable ||= alchable;
+      mergeBreakdownByMember(row.breakdownByMember, breakdownByMember);
+    }
+
+    for (const row of rowsByCanonicalID.values()) {
       aggregates.filteredItems.push({
-        itemID,
-        itemName: itemDatum.name,
-        breakdownByMember,
-        totalQuantity,
-        gePrice: grandExchangePrice,
-        highAlch,
-        alchable,
-        imageURL: composeItemIconHref({ itemID, quantity: totalQuantity }, itemDatum),
+        itemID: row.itemID,
+        itemName: row.itemName,
+        breakdownByMember: row.breakdownByMember,
+        totalQuantity: row.totalQuantity,
+        gePrice: row.totalQuantity > 0 ? row.totalGEValue / row.totalQuantity : 0,
+        highAlch: row.totalQuantity > 0 ? row.totalHighAlchValue / row.totalQuantity : 0,
+        alchable: row.alchable,
+        imageURL: composeItemIconHref({ itemID: row.itemID, quantity: row.totalQuantity }, itemData?.get(row.itemID)),
       });
     }
 
@@ -219,6 +251,21 @@
 
       return (searchPart.bitmask & (itemTags?.items[itemID] ?? 0n)) !== 0n;
     });
+  }
+
+  function mergeBreakdownByMember(target, source) {
+    for (const [name, sourceBreakdown] of source) {
+      const existingBreakdown = target.get(name);
+      if (!existingBreakdown) {
+        target.set(name, { ...sourceBreakdown });
+        continue;
+      }
+      for (const itemContainer of Member.itemContainerNames) {
+        if (sourceBreakdown[itemContainer] !== undefined) {
+          existingBreakdown[itemContainer] = (existingBreakdown[itemContainer] ?? 0) + sourceBreakdown[itemContainer];
+        }
+      }
+    }
   }
 
   function getFilteredQuantity(breakdownByMember) {
