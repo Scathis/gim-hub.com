@@ -31,7 +31,6 @@
   const subcategory = ref();
   const readActivity = ref();
   const clearingActivity = ref(false);
-  const clearActivityError = ref();
   const hiscores = ref();
   const {
     open: collectionLogModalOpen,
@@ -119,15 +118,12 @@
     }
 
     clearingActivity.value = true;
-    clearActivityError.value = undefined;
 
     try {
       await snapshotStore.clearBaselineSnapshot(props.member);
       readActivity.value = undefined;
     } catch (reason) {
       console.error("Failed to clear recent activity", reason);
-      clearActivityError.value = "Could not clear activity. Please try again.";
-      throw reason;
     } finally {
       clearingActivity.value = false;
     }
@@ -158,8 +154,15 @@
     openActivityModal({
       player: props.member,
       currentHiscores: hiscores.value,
-      onClearSnapshot: clearActivity,
     });
+  }
+
+  function handleActivityModalClose() {
+    closeActivityModal();
+
+    if (readActivity.value !== undefined) {
+      clearActivity();
+    }
   }
 
   watch(
@@ -199,7 +202,7 @@
     :open="activityModalOpen"
     :component="PlayerActivityWindow"
     :component-props="activityModalProps"
-    @close="closeActivityModal"
+    @close="handleActivityModalClose"
   />
 
   <div :class="['player-panel', 'rsborder', 'rsbackground', { expanded: selectedComponent }]">
@@ -216,19 +219,7 @@
         >
           {{ readActivity ? "View recent activity" : "New recent activity!" }}
         </button>
-        <button
-          class="player-panel-activity-clear"
-          type="button"
-          :aria-label="clearingActivity ? 'Clearing activity' : 'Clear activity'"
-          :disabled="clearingActivity"
-          @click="clearActivity().catch(function ignoreClearError() {})"
-        >
-          ✕
-        </button>
       </div>
-      <p v-if="clearActivityError" class="player-panel-activity-error validation-error" role="alert">
-        {{ clearActivityError }}
-      </p>
     </div>
 
     <div class="player-panel-minibar">

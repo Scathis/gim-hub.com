@@ -14,7 +14,6 @@
   const props = defineProps({
     player: { type: String, required: true },
     currentHiscores: { type: Map, default: undefined },
-    onClearSnapshot: { type: Function, default: undefined },
   });
   const emit = defineEmits(["close"]);
 
@@ -25,8 +24,6 @@
 
   const snapshotView = ref("lastVisit");
   const fetchedHiscores = ref();
-  const clearingSnapshot = ref(false);
-  const clearSnapshotError = ref();
 
   const baseline = computed(function getBaseline() {
     return snapshotStore.getBaselineSnapshot(props.player, snapshotView.value);
@@ -131,24 +128,6 @@
     }
 
     return { label: "Not started", className: "player-activity-quest-not-started" };
-  }
-
-  async function clearSnapshot() {
-    if (!props.onClearSnapshot || clearingSnapshot.value) {
-      return;
-    }
-
-    clearingSnapshot.value = true;
-    clearSnapshotError.value = undefined;
-
-    try {
-      await props.onClearSnapshot();
-      emit("close");
-    } catch {
-      clearSnapshotError.value = "Could not clear activity. Please try again.";
-    } finally {
-      clearingSnapshot.value = false;
-    }
   }
 
   watch(
@@ -338,20 +317,6 @@
           </div>
         </div>
       </section>
-    </div>
-
-    <div v-if="props.onClearSnapshot" class="player-activity-footer">
-      <p v-if="clearSnapshotError" class="player-activity-clear-error validation-error" role="alert">
-        {{ clearSnapshotError }}
-      </p>
-      <button
-        class="player-activity-dismiss men-button small"
-        type="button"
-        :disabled="clearingSnapshot"
-        @click="clearSnapshot"
-      >
-        {{ clearingSnapshot ? "Clearing activity…" : "Clear activity" }}
-      </button>
     </div>
   </div>
 </template>

@@ -25,22 +25,6 @@
   flex-shrink: 0;
 }
 
-.player-activity-footer {
-  margin-top: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.player-activity-dismiss {
-  flex: 1 1 auto;
-}
-
-.player-activity-clear-error {
-  margin: 0;
-  text-align: center;
-}
-
 .player-activity-meta {
   display: flex;
   align-items: center;

@@ -1,5 +1,5 @@
 <script setup>
-  import { computed } from "vue";
+  import { computed, ref } from "vue";
   import { useGroupStore } from "../../stores/group";
   import { useSnapshotStore } from "../../stores/snapshots";
   import { activityHasChanges, computeActivity } from "../../game/player-activity";
@@ -19,6 +19,7 @@
     openModal: openActivityModal,
     closeModal: closeActivityModal,
   } = useModal();
+  const openedMember = ref();
 
   const members = computed(function getMembers() {
     return [...groupStore.memberNames]
@@ -39,16 +40,21 @@
   }
 
   function openMemberActivity(member) {
-    async function clearMemberActivity() {
-      try {
-        await snapshotStore.clearBaselineSnapshot(member);
-      } catch (reason) {
-        console.error("Failed to clear recent activity", reason);
-        throw reason;
-      }
-    }
+    openedMember.value = member;
+    openActivityModal({ player: member });
+  }
 
-    openActivityModal({ player: member, onClearSnapshot: clearMemberActivity });
+  function handleActivityModalClose() {
+    closeActivityModal();
+
+    const member = openedMember.value;
+    openedMember.value = undefined;
+
+    if (member) {
+      snapshotStore.clearBaselineSnapshot(member).catch(function reportClearError(reason) {
+        console.error("Failed to clear recent activity", reason);
+      });
+    }
   }
 </script>
 
@@ -57,7 +63,7 @@
     :open="activityModalOpen"
     :component="PlayerActivityWindow"
     :component-props="activityModalProps"
-    @close="closeActivityModal"
+    @close="handleActivityModalClose"
   />
 
   <div id="history-page">
