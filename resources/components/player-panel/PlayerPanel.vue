@@ -153,7 +153,6 @@
     readActivity.value ??= frozenActivity;
     openActivityModal({
       player: props.member,
-      currentHiscores: hiscores.value,
     });
   }
 
