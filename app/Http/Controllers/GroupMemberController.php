@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Domain\MemberPlugin;
 use App\Domain\MemberSnapshotCreator;
+use App\Domain\MemberUpdates;
+use App\Domain\MemberUpdateValidation;
+use App\Domain\SkillHistory;
 use App\Domain\Validators;
-use App\Enums\AggregatePeriod;
 use App\Models\CollectionLog;
 use App\Models\Member;
 use App\Models\SkillStat;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -157,218 +161,28 @@ class GroupMemberController extends Controller
         return response()->json(null, 200);
     }
 
-    public function updateGroupMember(Request $request): JsonResponse
+    public function updateGroupMember(): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => 'required|string',
-            'stats' => 'nullable|array',
-            'coordinates' => 'nullable|array',
-            'skills' => 'nullable|array',
-            'quests' => 'nullable|array',
-            'inventory' => 'nullable|array',
-            'equipment' => 'nullable|array',
-            'bank' => 'nullable|array',
-            'bank_partial' => 'nullable|array',
-            'shared_bank' => 'nullable|array',
-            'rune_pouch' => 'nullable|array',
-            'seed_vault' => 'nullable|array',
-            'potion_storage' => 'nullable|array',
-            'poh_costume_room' => 'nullable|array',
-            'plank_sack' => 'nullable|array',
-            'master_scroll_book' => 'nullable|array',
-            'essence_pouches' => 'nullable|array',
-            'tackle_box' => 'nullable|array',
-            'tackle_box_partial' => 'nullable|array',
-            'tool_leprechaun' => 'nullable|array',
-            'elnock_inquisitor' => 'nullable|array',
-            'coal_bag' => 'nullable|array',
-            'fish_barrel' => 'nullable|array',
-            'quiver' => 'nullable|array',
-            'diary_vars' => 'nullable|array',
-            'collection_log_v2' => 'nullable|array',
-            'interacting' => 'nullable',
-            'timezone' => 'nullable|string|timezone',
-        ]);
+        MemberPlugin::observe();
 
-        $name = $validated['name'];
-        $groupId = $request->attributes->get('group')->id;
+        $validated = MemberUpdateValidation::validate(request()->all());
+        $groupId = request()->attributes->get('group')->id;
 
-        $isMember = Member::where('group_id', '=', $groupId)
-            ->where('name', '=', $name)
-            ->exists();
+        return DB::transaction(function () use ($groupId, $validated): JsonResponse {
+            $member = Member::where('group_id', '=', $groupId)
+                ->where('name', '=', $validated['name'])
+                ->lockForUpdate()
+                ->first();
 
-        if (! $isMember) {
-            return response()->json([
-                'error' => 'Player is not a member of this group',
-            ], 401);
-        }
-
-        $member = Member::firstOrCreate([
-            'group_id' => $groupId,
-            'name' => $name,
-        ]);
-
-        $validatorBounds = [
-            ['stats', 7, 8],
-            ['coordinates', 4, 4],
-            ['skills', 24, 24],
-            ['quests', 0, 250],
-            ['inventory', 56, 56],
-            ['equipment', 28, 28],
-            ['bank', 0, 3000],
-            ['bank_partial', 0, 3000],
-            ['shared_bank', 0, 1000],
-            ['rune_pouch', 6, 8],
-            ['seed_vault', 0, 500],
-            ['potion_storage', 0, 2000],
-            ['poh_costume_room', 0, 2500],
-            ['plank_sack', 0, 14],
-            ['master_scroll_book', 0, 40],
-            ['essence_pouches', 0, 16],
-            ['tackle_box', 0, 100],
-            ['tackle_box_partial', 0, 100],
-            ['tool_leprechaun', 0, 24],
-            ['elnock_inquisitor', 0, 6],
-            ['coal_bag', 0, 2],
-            ['fish_barrel', 0, 100],
-            ['quiver', 2, 2],
-            ['deposited', 0, 200],
-            ['diary_vars', 0, 62],
-        ];
-        foreach ($validatorBounds as [$propName, $minLength, $maxLength]) {
-            Validators::validateMemberPropLength($propName, $validated[$propName] ?? null, $minLength, $maxLength);
-        }
-
-        $collectionLogData = $validated['collection_log_v2'] ?? null;
-
-        DB::transaction(function () use ($member, $groupId, $validated, $collectionLogData) {
-            $member->update(['last_online_at' => now()]);
-
-            foreach (Member::PROPERTY_KEYS as $propertyKey) {
-                $partialKey = Member::PARTIAL_PROPERTY_KEYS[$propertyKey] ?? null;
-
-                if (isset($validated[$propertyKey])) {
-                    $member->properties()->updateOrCreate(
-                        ['key' => $propertyKey],
-                        ['value' => $validated[$propertyKey]]
-                    );
-                } elseif (isset($partialKey) && isset($validated[$partialKey])) {
-                    $fullFlat = [];
-                    $fullFlatProperty = $member->getProperty($propertyKey);
-                    if (isset($fullFlatProperty)) {
-                        $fullFlat = $fullFlatProperty->value;
-                    }
-
-                    $partialFlat = $validated[$partialKey];
-
-                    $partialReshaped = [];
-
-                    for ($i = 0; $i < count($partialFlat) - 1; $i += 2) {
-                        $itemID = $partialFlat[$i];
-                        $quantity = $partialFlat[$i + 1];
-                        $partialReshaped[$itemID] = $quantity;
-                    }
-
-                    for ($i = 0; $i < count($fullFlat) - 1; $i += 2) {
-                        $itemID = $fullFlat[$i];
-                        $quantity = $fullFlat[$i + 1];
-
-                        $fullFlat[$i + 1] = max(0, $quantity + ($partialReshaped[$itemID] ?? 0));
-
-                        unset($partialReshaped[$itemID]);
-                    }
-
-                    foreach ($partialReshaped as $itemID => $quantity) {
-                        $fullFlat[] = $itemID;
-                        $fullFlat[] = max(0, $quantity);
-                    }
-
-                    $member->properties()->updateOrCreate(
-                        ['key' => $propertyKey],
-                        ['value' => $fullFlat]
-                    );
-                }
+            if (is_null($member)) {
+                return response()->json(['error' => 'Player is not a member of this group'], 401);
             }
 
-            if (isset($validated['interacting'])) {
-                $member->properties()->updateOrCreate(
-                    ['key' => 'interacting'],
-                    ['value' => $validated['interacting']]
-                );
-            }
+            $member->update(['last_online_at' => now()->toDateTimeString()]);
+            MemberUpdates::apply($member, $validated);
 
-            if (! empty($validated['deposited'] ?? [])) {
-                $this->depositItems($member, $validated['deposited']);
-            }
-
-            if (! empty($validated['shared_bank'] ?? [])) {
-                $sharedMember = Member::firstOrCreate([
-                    'group_id' => $groupId,
-                    'name' => Member::SHARED_MEMBER,
-                ]);
-
-                $sharedMember?->properties()->updateOrCreate(
-                    ['key' => 'bank'],
-                    ['value' => $validated['shared_bank']]
-                );
-            }
-
-            if (! is_null($collectionLogData)) {
-                $this->updateCollectionLog($member, $collectionLogData);
-            }
+            return response()->json(null);
         });
-
-        return response()->json(null);
-    }
-
-    protected function updateCollectionLog(Member $member, array $collectionLogData): void
-    {
-        foreach (array_chunk($collectionLogData, 2) as [$itemId, $count]) {
-            $member->collectionLogs()->updateOrCreate([
-                'item_id' => $itemId,
-            ], [
-                'item_count' => $count,
-            ]);
-        }
-    }
-
-    protected function depositItems(Member $member, array $deposited): void
-    {
-        if (empty($deposited)) {
-            return;
-        }
-
-        $member->loadMissing('properties');
-        $bankProperty = $member->getProperty('bank');
-        $bankItems = $bankProperty?->value ?? [];
-
-        $depositedMap = [];
-        for ($i = 0; $i < count($deposited); $i += 2) {
-            $itemId = $deposited[$i];
-            $quantity = $deposited[$i + 1];
-            $depositedMap[$itemId] = $quantity;
-        }
-
-        for ($i = 0; $i < count($bankItems); $i += 2) {
-            $itemId = $bankItems[$i];
-            if (isset($depositedMap[$itemId])) {
-                $bankItems[$i + 1] += $depositedMap[$itemId];
-                unset($depositedMap[$itemId]);
-            }
-        }
-
-        foreach ($depositedMap as $itemId => $quantity) {
-            if ($itemId === 0 || $quantity <= 0) {
-                continue;
-            }
-            $bankItems[] = $itemId;
-            $bankItems[] = $quantity;
-        }
-
-        $member->properties()->updateOrCreate(
-            ['key' => 'bank'],
-            ['value' => $bankItems]
-        );
     }
 
     public function getGroupData(Request $request): JsonResponse
@@ -384,18 +198,16 @@ class GroupMemberController extends Controller
             ->with('properties')
             ->get();
 
-        return response()->json($members->map(function ($member) use ($fromTime) {
+        return response()->json($members->map(function (Member $member) use ($fromTime): array {
             $properties = $member->properties->keyBy('key');
             $lastUpdated = $properties->max('updated_at');
 
             $data = [
                 'name' => $member->name,
+                'plugin_status' => MemberPlugin::status($member, cache('plugin.latest_version')),
                 'color_hue_degrees' => $member->color_hue_degrees,
                 'last_updated' => is_null($lastUpdated) ? null : Carbon::make($lastUpdated)->toIso8601ZuluString(),
                 'last_online_at' => is_null($member->last_online_at) ? null : Carbon::make($member->last_online_at)->toIso8601ZuluString(),
-                'shared_bank' => null,
-                'deposited' => null,
-                'collection_log' => null,
             ];
 
             foreach (Member::PROPERTY_KEYS as $key) {
@@ -428,49 +240,19 @@ class GroupMemberController extends Controller
         return $interacting;
     }
 
-    public function getSkillData(Request $request): JsonResponse
+    public function getSkillData(): JsonResponse
     {
+        $request = request();
         $validated = $request->validate([
-            'period' => 'required|in:Day,Week,Month,Year,Realtime',
+            'start' => ['sometimes', 'required', 'date', ['before', 'end']],
+            'end' => ['required', 'date', ['before_or_equal', 'now']],
         ]);
 
-        $groupId = $request->attributes->get('group')->id;
-        $period = $validated['period'];
-
-        $aggregatePeriod = match ($period) {
-            'Day' => AggregatePeriod::Day,
-            'Week' => AggregatePeriod::Month,
-            'Month' => AggregatePeriod::Month,
-            'Year' => AggregatePeriod::Year,
-            'Realtime' => AggregatePeriod::Day,
-            default => AggregatePeriod::Day,
-        };
-
-        $members = Member::where('group_id', '=', $groupId)
-            ->with(['skillStats' => function ($query) use ($aggregatePeriod) {
-                $query->where('type', '=', $aggregatePeriod->value)
-                    ->orderBy('created_at');
-            }])
-            ->get();
-
-        $memberData = [];
-        foreach ($members as $member) {
-            $skillData = $member->skillStats->map(function ($stat) {
-                return [
-                    'time' => Carbon::make($stat->created_at)->toIso8601ZuluString(),
-                    'data' => $stat->skills,
-                ];
-            })->toArray();
-
-            $memberData[] = [
-                'name' => $member->name,
-                'skill_data' => $skillData,
-            ];
-        }
-
-        return response()->json(array_values(array_filter($memberData, function ($member) {
-            return ! empty($member['skill_data']);
-        })));
+        return response()->json(app(SkillHistory::class)->get(
+            $request->attributes->get('group'),
+            isset($validated['start']) ? CarbonImmutable::parse($validated['start'])->utc() : null,
+            CarbonImmutable::parse($validated['end'])->utc(),
+        ));
     }
 
     public function getCollectionLog(Request $request): Collection
@@ -560,7 +342,7 @@ class GroupMemberController extends Controller
             ->first();
 
         try {
-            $response = Http::timeout(10)->withUserAgent('GIM hub (https://gim-hub.com)')->get(
+            $response = Http::withUserAgent('GIM hub (https://gim-hub.com)')->get(
                 'https://secure.runescape.com/m=hiscore_oldschool/index_lite.json?player='.urlencode($member->name)
             );
         } catch (Throwable) {

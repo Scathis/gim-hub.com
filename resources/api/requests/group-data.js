@@ -1,5 +1,4 @@
 import * as z from "zod/v4";
-import { skills } from "../../game/skill";
 import { dateSchema } from "./shared";
 
 export async function fetchGroupData({ baseURL, credentials, fromTime }) {
@@ -21,8 +20,7 @@ export async function fetchGroupData({ baseURL, credentials, fromTime }) {
 
 const statsSchema = z
   .array(z.uint32())
-  .min(7)
-  .max(8)
+  .length(8)
   .refine(function hasValidRunMaximum(stats) {
     return stats[5] === 100;
   })
@@ -32,7 +30,7 @@ const statsSchema = z
       prayer: { current: stats[2], max: stats[3] },
       run: { current: Math.floor(stats[4] / 100), max: stats[5] },
       world: stats[6],
-      specialAttack: { current: stats[7] ?? 100, max: 100 },
+      specialAttack: { current: stats[7], max: 100 },
     };
   });
 
@@ -163,10 +161,6 @@ const skillsSchema = z
     skillsInBackendOrder.forEach(function mapSkill(skill, index) {
       skillExperience[skill] = experience.at(index);
     });
-
-    for (const skill of skills) {
-      skillExperience[skill] ??= 0;
-    }
 
     return skillExperience;
   });
@@ -841,6 +835,13 @@ const groupDataSchema = z
       coordinates: coordinatesSchema.nullish().transform(function omitNull(value) {
         return value ?? undefined;
       }),
+      plugin_status: z
+        .object({
+          reason: z.enum(["wrong_plugin", "update_available"]),
+          installed_version: z.string().nullable(),
+          latest_version: z.string().nullable(),
+        })
+        .nullish(),
       last_updated: dateSchema.nullish().transform(function omitNull(value) {
         return value ?? undefined;
       }),
@@ -875,6 +876,33 @@ const groupDataSchema = z
       elnock_inquisitor: nullableItemCollectionSchema,
       coal_bag: nullableItemCollectionSchema,
       fish_barrel: nullableItemCollectionSchema,
+      herb_sack: nullableItemCollectionSchema,
+      looting_bag: nullableItemCollectionSchema,
+      seed_box: nullableItemCollectionSchema,
+      gem_bag: nullableItemCollectionSchema,
+      chugging_barrel: nullableItemCollectionSchema,
+      stash_units: z
+        .nullish(
+          z.array(
+            z.object({
+              id: z.number().int().positive(),
+              name: z.string(),
+              tier: z.enum(["Beginner", "Easy", "Medium", "Hard", "Elite", "Master"]),
+              state: z.enum(["unbuilt", "empty", "filled"]),
+              items: itemCollectionSchema,
+              alternatives: z.array(z.string()),
+            }),
+          ),
+        )
+        .transform(function mapStashUnits(units) {
+          return units == null
+            ? undefined
+            : new Map(
+                units.map(function mapUnit(unit) {
+                  return [unit.id, unit];
+                }),
+              );
+        }),
       interacting: interactionSchema.nullish().transform(function omitNull(value) {
         return value ?? undefined;
       }),
@@ -906,6 +934,7 @@ const groupDataSchema = z
 function mapMember({
   last_updated,
   last_online_at,
+  plugin_status,
   rune_pouch,
   seed_vault,
   potion_storage,
@@ -920,12 +949,19 @@ function mapMember({
   elnock_inquisitor,
   coal_bag,
   fish_barrel,
+  herb_sack,
+  looting_bag,
+  seed_box,
+  gem_bag,
+  chugging_barrel,
+  stash_units,
   ...member
 }) {
   const mappedMember = {
     ...member,
     lastUpdated: last_updated,
     lastOnlineAt: last_online_at,
+    pluginStatus: plugin_status,
     runePouch: rune_pouch,
     seedVault: seed_vault,
     potionStorage: potion_storage,
@@ -940,6 +976,12 @@ function mapMember({
     elnockInquisitor: elnock_inquisitor,
     coalBag: coal_bag,
     fishBarrel: fish_barrel,
+    herbSack: herb_sack,
+    lootingBag: looting_bag,
+    seedBox: seed_box,
+    gemBag: gem_bag,
+    chuggingBarrel: chugging_barrel,
+    stashUnits: stash_units,
   };
 
   for (const key of Object.keys(mappedMember)) {

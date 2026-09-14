@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { createPinia, setActivePinia } from "pinia";
+import { setActivePinia } from "pinia";
 import { createMemoryHistory } from "vue-router";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { createTestPinia } from "./vue-test-helpers";
 import { createApplicationRouter } from "../../router";
 import { useApiStore } from "../../stores/api";
 
@@ -17,12 +18,7 @@ function storeCredentials() {
 
 describe("router", function describeRouter() {
   beforeEach(function setup() {
-    setActivePinia(createPinia());
-  });
-
-  afterEach(function cleanup() {
-    localStorage.clear();
-    vi.restoreAllMocks();
+    setActivePinia(createTestPinia());
   });
 
   it("opens the demo before redirecting to group items", async function testDemoRoute() {
@@ -35,7 +31,7 @@ describe("router", function describeRouter() {
 
     await router.push("/demo");
 
-    expect(apiStore.logInDemo).toHaveBeenCalledOnce();
+    expect(apiStore.isDemo).toBe(true);
     expect(router.currentRoute.value.path).toBe("/group/items");
   });
 
@@ -43,12 +39,12 @@ describe("router", function describeRouter() {
     const apiStore = useApiStore();
     apiStore.client = {};
     apiStore.isDemo = true;
-    const disconnect = vi.spyOn(apiStore, "disconnect");
     const router = createTestRouter();
 
     await router.push("/logout");
 
-    expect(disconnect).toHaveBeenCalledOnce();
+    expect(apiStore.client).toBeUndefined();
+    expect(apiStore.isDemo).toBe(false);
     expect(router.currentRoute.value.path).toBe("/");
   });
 
@@ -62,20 +58,21 @@ describe("router", function describeRouter() {
 
     await router.push("/group/history");
 
-    expect(apiStore.logInLive).toHaveBeenCalledOnce();
+    expect(apiStore.client).toBeDefined();
     expect(router.currentRoute.value.path).toBe("/group/history");
   });
 
-  it("returns home when a stored session cannot be restored", async function testFailedSessionRestore() {
+  it("returns home and clears credentials when the server rejects them", async function testFailedSessionRestore() {
     storeCredentials();
     const apiStore = useApiStore();
-    vi.spyOn(apiStore, "logInLive").mockRejectedValue(new Error("Invalid credentials"));
-    const logOut = vi.spyOn(apiStore, "logOut");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
     const router = createTestRouter();
 
     await router.push("/group/history");
 
-    expect(logOut).toHaveBeenCalledOnce();
+    expect(localStorage.getItem("groupName")).toBeNull();
+    expect(localStorage.getItem("groupToken")).toBeNull();
+    expect(apiStore.client).toBeUndefined();
     expect(router.currentRoute.value.path).toBe("/");
   });
 

@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -39,6 +40,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PROTO,
         );
     })
-    ->withExceptions(function (Exceptions $exceptions) {
+    ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->stopIgnoring(ValidationException::class);
+        $exceptions->dontReportWhen(fn (Throwable $exception): bool => $exception instanceof ValidationException
+            && ! request()->is('api/group/*/update-group-member'));
+
         Integration::handles($exceptions);
     })->create();
