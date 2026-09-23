@@ -9,20 +9,26 @@ import Tooltip from "../../components/tooltip/Tooltip.vue";
 import { useApiStore } from "../../stores/api";
 import { parseGroupData } from "../../api/requests/group-data";
 
-const portableItems = [13226, 22586, 24482, 24481, 30000];
+const portableItems = [13226, 22586, 24482, 24481, 30000, 12019];
+const otherContainers = [28951, 24882, 21389, 5509, 25580, 12019, 25582];
 const items = new Map([
-  ...portableItems.map(function portableItem(id) {
+  ...[...portableItems, ...otherContainers, 12791].map(function portableItem(id) {
     return [id, { name: `Container ${id}`, highalch: 0 }];
   }),
   [1095, { name: "Leather chaps", highalch: 12, alchable: true }],
   [199, { name: "Grimy guam leaf", highalch: 3 }],
+  [2430, { name: "Restore potion(4)", highalch: 3 }],
+  [2432, { name: "Restore potion(3)", highalch: 3 }],
+  [1623, { name: "Uncut sapphire", highalch: 3 }],
+  [5295, { name: "Ranarr seed", highalch: 3 }],
+  [30001, { name: "Unrelated (3)", highalch: 3 }],
 ]);
 
 describe("storage UI", function storageInterface() {
   let container;
   let payload;
 
-  async function mount(component) {
+  async function mount(component, itemTags) {
     vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
@@ -38,7 +44,7 @@ describe("storage UI", function storageInterface() {
     const pinia = createTestPinia();
     useApiStore(pinia).client = {
       async fetchGameData() {
-        return { items, quests: new Map(), gePrices: new Map() };
+        return { items, quests: new Map(), gePrices: new Map(), itemTags };
       },
       async fetchGroupCollectionLogs() {
         return new Map();
@@ -61,7 +67,7 @@ describe("storage UI", function storageInterface() {
     await nextTick();
   }
 
-  it("shows unknown, observed and empty portable contents through inventory tooltips", async function portableTooltips() {
+  it("shows contents only for filled portable containers", async function portableTooltips() {
     payload = [
       {
         name: "Alice",
@@ -76,25 +82,78 @@ describe("storage UI", function storageInterface() {
       },
     });
     const links = container.querySelectorAll(".player-inventory-item-box");
-    expect(links.length).toBe(5);
+    expect(links.length).toBe(6);
     for (const link of links) {
-      link.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
-      await nextTick();
-      expect(container.querySelector('[role="tooltip"]').textContent).toContain("Contents unknown");
+      expect(link.querySelector(".player-inventory-contents-indicator")).toBeNull();
+      expect(link.hasAttribute("data-tooltip")).toBe(false);
     }
 
-    payload = [{ ...payload[0], herb_sack: [199, 2], looting_bag: [], seed_box: [], gem_bag: [], chugging_barrel: [] }];
+    payload = [
+      {
+        ...payload[0],
+        herb_sack: [199, 2],
+        looting_bag: [],
+        seed_box: [],
+        gem_bag: [],
+        chugging_barrel: [],
+        coal_bag: [],
+      },
+    ];
     await vi.advanceTimersByTimeAsync(1000);
     await nextTick();
     links[0].dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
     await nextTick();
     expect(container.querySelector('[role="tooltip"]').textContent).toContain("2 Grimy guam leaf");
+    expect(links[0].querySelector(".player-inventory-contents-indicator")).not.toBeNull();
     for (const link of [...links].slice(1)) {
-      link.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
-      await nextTick();
-      expect(container.querySelector('[role="tooltip"]').textContent).toContain("Empty");
-      expect(container.querySelector('[role="tooltip"]').textContent).not.toContain("unknown");
+      expect(link.querySelector(".player-inventory-contents-indicator")).toBeNull();
+      expect(link.hasAttribute("data-tooltip")).toBe(false);
     }
+  });
+
+  it("marks tracked containers with contents and shows combined essence details", async function containerPreviews() {
+    payload = [
+      {
+        name: "Alice",
+        inventory: [...otherContainers, 30000, 12791]
+          .flatMap(function inventoryItem(id) {
+            return [id, 1];
+          })
+          .concat(Array(38).fill(0)),
+        quiver: [199, 2],
+        plank_sack: [199, 2],
+        master_scroll_book: [199, 2],
+        essence_pouches: [199, 2],
+        tackle_box: [199, 2],
+        coal_bag: [199, 2],
+        fish_barrel: [199, 2],
+        chugging_barrel: [199, 2, 2430, 15, 1623, 3, 5295, 4],
+        rune_pouch: [199, 2, 0, 0, 0, 0, 0, 0],
+      },
+    ];
+    await mount({
+      render() {
+        return [h(PlayerInventory, { member: "Alice" }), h(Tooltip)];
+      },
+    });
+
+    const links = container.querySelectorAll(".player-inventory-item-box");
+    expect(links.length).toBe(9);
+    for (const link of [...links].slice(0, 8)) {
+      expect(link.querySelector(".player-inventory-contents-indicator")).not.toBeNull();
+      expect(link.querySelector(".player-inventory-pouch-container")).toBeNull();
+    }
+    expect(links[8].querySelector(".player-inventory-contents-indicator")).toBeNull();
+    expect(links[8].querySelectorAll(".player-inventory-pouch-item-box").length).toBe(1);
+    links[7].dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    await nextTick();
+    expect(container.querySelector('[role="tooltip"]').textContent).toContain("4 Ranarr seed");
+
+    links[3].dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    await nextTick();
+    expect(container.querySelector('[role="tooltip"]').textContent).toContain(
+      "Combined contents of all essence pouches",
+    );
   });
 
   it("uses the usual empty inventory view when STASH units have no known items", async function statusOnlyUnits() {
@@ -173,5 +232,55 @@ describe("storage UI", function storageInterface() {
     container.querySelector("#items-page-reset-filters-button").click();
     await nextTick();
     expect(container.querySelectorAll(".items-page-panel").length).toBe(2);
+  });
+
+  it("combines excluded names and tags with AND before OR in item search", async function combinedItemSearch() {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+    payload = [{ name: "Alice", bank: [199, 1, 1095, 1, 5295, 1] }];
+    await mount(ItemsPage, { tags: [["herb", 0]], items: { 199: 1n, 5295: 1n } });
+
+    const search = container.querySelector("#items-page-search input");
+    function visibleNames() {
+      return [...container.querySelectorAll(".items-page-panel-name")]
+        .map(function itemName(element) {
+          return element.textContent;
+        })
+        .sort();
+    }
+
+    search.value = "-guam";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+    expect(visibleNames()).toEqual(["Leather chaps", "Ranarr seed"]);
+
+    search.value = "guam | leather & -guam";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+    expect(visibleNames()).toEqual(["Grimy guam leaf", "Leather chaps"]);
+
+    search.value = 'tag:herb & -"Grimy guam leaf" | leather';
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+    expect(visibleNames()).toEqual(["Leather chaps", "Ranarr seed"]);
+  });
+
+  it("applies a tag to every alternative in a bracketed item search", async function bracketedItemSearch() {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+    payload = [{ name: "Alice", bank: [2430, 1, 2432, 1, 30001, 1] }];
+    await mount(ItemsPage, { tags: [["potions", 0]], items: { 2430: 1n, 2432: 1n } });
+
+    const search = container.querySelector("#items-page-search input");
+    search.value = "tag:potions & [(4) | (3) | (2) | (1)]";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await nextTick();
+    expect(
+      [...container.querySelectorAll(".items-page-panel-name")]
+        .map(function itemName(element) {
+          return element.textContent;
+        })
+        .sort(),
+    ).toEqual(["Restore potion(3)", "Restore potion(4)"]);
   });
 });

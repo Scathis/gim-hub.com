@@ -79,40 +79,8 @@
     );
   });
 
-  const searchParts = computed(function getSearchParts() {
-    return (searchFilterUserString.value ?? "")
-      .split("|")
-      .map(function normalizeSearchPart(searchPart) {
-        return searchPart.trim().toLocaleLowerCase();
-      })
-      .map(function parseSearchPart(searchPart) {
-        if (searchPart.length === 0) {
-          return { type: "Name", lowercase: "", exact: false };
-        }
-
-        const exact = searchPart.startsWith('"') && searchPart.endsWith('"');
-        if (exact) {
-          return { type: "Name", lowercase: searchPart.slice(1, -1), exact: true };
-        }
-
-        const splitForTag = searchPart.split(":");
-        if (splitForTag.length === 1 || splitForTag[0] !== "tag") {
-          return { type: "Name", lowercase: searchPart, exact: false };
-        }
-
-        const suffix = splitForTag.slice(1).join(":").toLocaleLowerCase();
-        let bitmask = 0n;
-        for (const [tag, bitIndex] of gameDataStore.gameData.itemTags?.tags ?? []) {
-          if (tag.toLocaleLowerCase() === suffix) {
-            bitmask += 1n << BigInt(bitIndex);
-          }
-        }
-
-        return { type: "Tag", bitmask };
-      })
-      .filter(function hasSearchValue(searchPart) {
-        return searchPart.type !== "Name" || searchPart.lowercase.length > 0;
-      });
+  const searchExpression = computed(function getSearchExpression() {
+    return parseSearchExpression(searchFilterUserString.value ?? "");
   });
 
   const memberFilter = computed(function getMemberFilter() {
@@ -214,7 +182,7 @@
 
   const hasActiveFilters = computed(function filtersAreActive() {
     return (
-      searchParts.value.length > 0 ||
+      Boolean(searchExpression.value) ||
       memberFilter.value.size > 0 ||
       sortCategory.value !== DEFAULT_SORT_CATEGORY ||
       containerFilter.value !== DEFAULT_CONTAINER_FILTER
@@ -237,20 +205,115 @@
     return value === "All" || Member.itemContainerNames.includes(value) ? value : undefined;
   }
 
+  function splitSearchExpression(value, separator) {
+    const parts = [];
+    let start = 0;
+    let bracketDepth = 0;
+    let quoted = false;
+
+    for (let index = 0; index < value.length; index++) {
+      const character = value[index];
+      if (character === '"') {
+        quoted = !quoted;
+      } else if (!quoted && character === "[") {
+        bracketDepth++;
+      } else if (!quoted && character === "]" && bracketDepth > 0) {
+        bracketDepth--;
+      } else if (!quoted && bracketDepth === 0 && character === separator) {
+        parts.push(value.slice(start, index));
+        start = index + 1;
+      }
+    }
+
+    parts.push(value.slice(start));
+    return parts;
+  }
+
+  function parseSearchExpression(value) {
+    const searchValue = value.trim().toLocaleLowerCase();
+    if (searchValue.length === 0 || searchValue === "-") {
+      return undefined;
+    }
+
+    const alternatives = splitSearchExpression(searchValue, "|");
+    if (alternatives.length > 1) {
+      const expressions = alternatives.map(parseSearchExpression).filter(Boolean);
+      return expressions.length > 1 ? { type: "Or", expressions } : expressions[0];
+    }
+
+    const requirements = splitSearchExpression(searchValue, "&");
+    if (requirements.length > 1) {
+      const expressions = requirements.map(parseSearchExpression).filter(Boolean);
+      return expressions.length > 1 ? { type: "And", expressions } : expressions[0];
+    }
+
+    if (searchValue.startsWith("-[") && searchValue.endsWith("]")) {
+      const expression = parseSearchExpression(searchValue.slice(2, -1));
+      return expression ? { type: "Not", expression } : undefined;
+    }
+
+    if (searchValue.startsWith("[") && searchValue.endsWith("]")) {
+      return parseSearchExpression(searchValue.slice(1, -1));
+    }
+
+    const excluded = searchValue.startsWith("-");
+    const term = excluded ? searchValue.slice(1) : searchValue;
+    const exact = term.startsWith('"') && term.endsWith('"');
+    if (exact) {
+      return term.length > 2 ? { type: "Name", lowercase: term.slice(1, -1), exact: true, excluded } : undefined;
+    }
+
+    const splitForTag = term.split(":");
+    if (splitForTag.length === 1 || splitForTag[0] !== "tag") {
+      return { type: "Name", lowercase: term, exact: false, excluded };
+    }
+
+    const suffix = splitForTag.slice(1).join(":");
+    let bitmask = 0n;
+    for (const [tag, bitIndex] of gameDataStore.gameData.itemTags?.tags ?? []) {
+      if (tag.toLocaleLowerCase() === suffix) {
+        bitmask += 1n << BigInt(bitIndex);
+      }
+    }
+
+    return { type: "Tag", bitmask, excluded };
+  }
+
+  function matchesSearchExpression(expression, itemID, itemLowercase, itemTags) {
+    if (expression.type === "Or") {
+      return expression.expressions.some(function matchesAlternative(alternative) {
+        return matchesSearchExpression(alternative, itemID, itemLowercase, itemTags);
+      });
+    }
+
+    if (expression.type === "And") {
+      return expression.expressions.every(function matchesRequirement(requirement) {
+        return matchesSearchExpression(requirement, itemID, itemLowercase, itemTags);
+      });
+    }
+
+    if (expression.type === "Not") {
+      return !matchesSearchExpression(expression.expression, itemID, itemLowercase, itemTags);
+    }
+
+    let matches;
+    if (expression.type === "Name") {
+      matches = expression.exact
+        ? expression.lowercase === itemLowercase
+        : itemLowercase.includes(expression.lowercase);
+    } else {
+      matches = (expression.bitmask & (itemTags?.items[itemID] ?? 0n)) !== 0n;
+    }
+
+    return expression.excluded ? !matches : matches;
+  }
+
   function itemMatchesSearch(itemID, itemDatum, itemTags) {
-    if (searchParts.value.length === 0) {
+    if (!searchExpression.value) {
       return true;
     }
 
-    const itemLowercase = itemDatum.name.toLocaleLowerCase();
-
-    return searchParts.value.some(function matchesSearchPart(searchPart) {
-      if (searchPart.type === "Name") {
-        return searchPart.exact ? searchPart.lowercase === itemLowercase : itemLowercase.includes(searchPart.lowercase);
-      }
-
-      return (searchPart.bitmask & (itemTags?.items[itemID] ?? 0n)) !== 0n;
-    });
+    return matchesSearchExpression(searchExpression.value, itemID, itemDatum.name.toLocaleLowerCase(), itemTags);
   }
 
   function mergeBreakdownByMember(target, source) {

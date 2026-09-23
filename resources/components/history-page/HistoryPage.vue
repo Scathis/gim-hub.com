@@ -22,13 +22,9 @@
   const openedMember = ref();
 
   const members = computed(function getMembers() {
-    return [...groupStore.memberNames]
-      .filter(function excludeSharedMember(member) {
-        return member !== "@SHARED";
-      })
-      .sort(function sortMembers(firstMember, secondMember) {
-        return firstMember.localeCompare(secondMember);
-      });
+    return [...groupStore.memberNames].filter(function excludeSharedMember(member) {
+      return member !== "@SHARED";
+    });
   });
 
   function memberHasNewActivity(member) {
