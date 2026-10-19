@@ -19,6 +19,7 @@ describe("getCanonicalItemMap", function describeCanonicalItemMap() {
     const canonicalItemMap = getCanonicalItemMap(items);
 
     expect(canonicalItemMap.get(100)).toBeUndefined();
+
     for (const id of [101, 102, 103, 104, 105]) {
       expect(canonicalItemMap.get(id)).toBe(100);
     }

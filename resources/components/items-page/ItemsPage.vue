@@ -102,6 +102,7 @@
     for (const [itemID, breakdownByMember] of groupStore.items) {
       const canonicalID = canonicalItemMap.get(itemID) ?? itemID;
       const canonicalDatum = itemData?.get(canonicalID);
+
       if (!canonicalDatum || !itemMatchesSearch(canonicalID, canonicalDatum, itemTags)) {
         continue;
       }
@@ -119,6 +120,7 @@
       aggregates.totalGEPrice += totalQuantity * grandExchangePrice;
 
       let row = rowsByCanonicalID.get(canonicalID);
+
       if (!row) {
         row = {
           itemID: canonicalID,
@@ -332,10 +334,13 @@
   function mergeBreakdownByMember(target, source) {
     for (const [name, sourceBreakdown] of source) {
       const existingBreakdown = target.get(name);
+
       if (!existingBreakdown) {
         target.set(name, { ...sourceBreakdown });
+
         continue;
       }
+
       for (const itemContainer of Member.itemContainerNames) {
         if (sourceBreakdown[itemContainer] !== undefined) {
           existingBreakdown[itemContainer] = (existingBreakdown[itemContainer] ?? 0) + sourceBreakdown[itemContainer];

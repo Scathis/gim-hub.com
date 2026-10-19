@@ -186,9 +186,17 @@ const DEGRADED_CHARGE_PATTERN = /^(.*)\s(?:100|75|50|25|0)$/;
 
 function stripDegradationSuffix(name) {
   const brokenMatch = DEGRADED_BROKEN_PATTERN.exec(name);
-  if (brokenMatch) return { base: brokenMatch[1], matched: true };
+
+  if (brokenMatch) {
+    return { base: brokenMatch[1], matched: true };
+  }
+
   const chargeMatch = DEGRADED_CHARGE_PATTERN.exec(name);
-  if (chargeMatch) return { base: chargeMatch[1], matched: true };
+
+  if (chargeMatch) {
+    return { base: chargeMatch[1], matched: true };
+  }
+
   return { base: name, matched: false };
 }
 
@@ -197,17 +205,30 @@ function stripDegradationSuffix(name) {
 // (e.g. "Decorative armour" covers several unrelated cosmetic tiers under one name) - highalch
 // equality against the degraded variants is used to rule those out rather than guess.
 function pickCanonicalID(cleanIDs, suffixedIDs, items) {
-  if (cleanIDs.length === 0) return undefined;
-  if (cleanIDs.length === 1) return cleanIDs[0];
+  if (cleanIDs.length === 0) {
+    return undefined;
+  }
+
+  if (cleanIDs.length === 1) {
+    return cleanIDs[0];
+  }
 
   const suffixedHighAlchValues = new Set(suffixedIDs.map((id) => items.get(id).highalch));
   const matched = cleanIDs.filter((id) => suffixedHighAlchValues.has(items.get(id).highalch));
 
-  if (matched.length === 0) return undefined;
-  if (matched.length === 1) return matched[0];
+  if (matched.length === 0) {
+    return undefined;
+  }
+
+  if (matched.length === 1) {
+    return matched[0];
+  }
 
   const matchedHighAlchValues = new Set(matched.map((id) => items.get(id).highalch));
-  if (matchedHighAlchValues.size !== 1) return undefined;
+
+  if (matchedHighAlchValues.size !== 1) {
+    return undefined;
+  }
 
   return Math.min(...matched);
 }
@@ -218,11 +239,18 @@ const canonicalItemMapCache = new WeakMap();
 // so the items list can show one combined row instead of one row per degradation tier. Only
 // includes entries for variants that should redirect - a canonical item itself has no entry.
 export function getCanonicalItemMap(items) {
-  if (!items) return new Map();
+  if (!items) {
+    return new Map();
+  }
+
   const cached = canonicalItemMapCache.get(items);
-  if (cached) return cached;
+
+  if (cached) {
+    return cached;
+  }
 
   const nameIndex = new Map();
+
   for (const [itemID, item] of items) {
     const ids = nameIndex.get(item.name) ?? [];
     ids.push(itemID);
@@ -230,19 +258,28 @@ export function getCanonicalItemMap(items) {
   }
 
   const suffixGroups = new Map();
+
   for (const [itemID, item] of items) {
     const { base, matched } = stripDegradationSuffix(item.name);
-    if (!matched) continue;
+
+    if (!matched) {
+      continue;
+    }
+
     const ids = suffixGroups.get(base) ?? [];
     ids.push(itemID);
     suffixGroups.set(base, ids);
   }
 
   const canonicalItemMap = new Map();
+
   for (const [base, suffixedIDs] of suffixGroups) {
     const cleanIDs = nameIndex.get(base) ?? [];
     const canonicalID = pickCanonicalID(cleanIDs, suffixedIDs, items);
-    if (canonicalID === undefined) continue;
+
+    if (canonicalID === undefined) {
+      continue;
+    }
 
     for (const itemID of new Set([...cleanIDs, ...suffixedIDs])) {
       if (itemID !== canonicalID) {
@@ -252,6 +289,7 @@ export function getCanonicalItemMap(items) {
   }
 
   canonicalItemMapCache.set(items, canonicalItemMap);
+
   return canonicalItemMap;
 }
 
