@@ -71,7 +71,7 @@ const routes = [
     component: function loadAuthenticatedSetupInstructions() {
       return import("./components/setup-instructions/SetupInstructions.vue");
     },
-    meta: { layout: "authed", hideHeader: true },
+    meta: { layout: "authed" },
   },
   {
     path: "/group/items",
@@ -93,6 +93,13 @@ const routes = [
       return import("./components/history-page/HistoryPage.vue");
     },
     meta: { layout: "authed", showPanels: true },
+  },
+  {
+    path: "/group/activity",
+    component: function loadActivityPage() {
+      return import("./components/player-activity/ActivityPage.vue");
+    },
+    meta: { layout: "authed" },
   },
   {
     path: "/group/panels",
